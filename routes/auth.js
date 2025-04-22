@@ -1,8 +1,36 @@
 const express = require('express');
 const router = express.Router();
-const { msalClient, scopes } = require('../config/auth-config');
-const { Client } = require('@microsoft/microsoft-graph-client');
-const { TokenCredentialAuthenticationProvider } = require('@microsoft/microsoft-graph-client/authProviders/azureTokenCredentials');
+const { ConfidentialClientApplication } = require('@azure/msal-node');
+
+// MSAL configuration
+const msalConfig = {
+  auth: {
+    clientId: process.env.CLIENT_ID,
+    authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
+    clientSecret: process.env.CLIENT_SECRET
+  },
+  system: {
+    loggerOptions: {
+      loggerCallback(loglevel, message, containsPii) {
+        console.log(message);
+      },
+      piiLoggingEnabled: false,
+      logLevel: "Info"
+    }
+  }
+};
+
+// Create MSAL application object
+const msalClient = new ConfidentialClientApplication(msalConfig);
+
+// Microsoft Graph scopes needed for the app
+const scopes = [
+  'user.read',
+  'mail.read',
+  'mail.send',
+  'calendars.read',
+  'mail.readwrite'
+];
 
 // Login route
 router.get('/login', (req, res) => {
@@ -71,13 +99,14 @@ const getGraphClient = (accessToken) => {
   };
   
   // Initialize Graph client
-  const client = Client.init({
+  const client = require('@microsoft/microsoft-graph-client').Client.init({
     authProvider: authProvider
   });
   
   return client;
 };
 
+// Export both the router and the helper functions
 module.exports = {
   router,
   isAuthenticated,
