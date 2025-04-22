@@ -12,3 +12,13 @@ def get_unread_emails():
     response.raise_for_status()
     messages = response.json()["value"]
     return messages
+
+
+def get_calendar_events():
+    token = get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
+    url = "https://graph.microsoft.com/v1.0/me/calendar/events?$top=5"
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+    return response.json()["value"]
