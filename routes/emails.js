@@ -115,8 +115,6 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
           `\n- ${e.subject} on ${moment.tz(e.start.dateTime, e.start.timeZone).tz(userTimeZone).format('MMMM D')} from ${moment.tz(e.start.dateTime, e.start.timeZone).tz(userTimeZone).format('h:mm A')} to ${moment.tz(e.end.dateTime, e.end.timeZone).tz(userTimeZone).format('h:mm A')}`
         ).join(', ')}.`
       : 'I have no scheduled meetings in the next few days.';
-
-    console.dir(availabilityText, { depth: null });
     
     // Prepare data for Ollama
     const emailContent = email.body.content.replace(/<[^>]*>/g, ' '); // Basic HTML stripping
@@ -125,7 +123,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     // Get AI to draft response using Ollama
     const systemPrompt = `You are an email assistant that drafts professional responses. Consider the calendar availability when mentioned. Be concise but polite.`;
     
-    const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email. If the email mentions scheduling a meeting, suggest available times based on my calendar.`;
+    const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email.`;// If the email mentions scheduling a meeting, suggest available times based on my calendar.`;
     
     // Prepare fallback data
     const fallbackData = {
