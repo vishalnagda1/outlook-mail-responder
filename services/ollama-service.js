@@ -1,5 +1,5 @@
 /**
- * Service for interacting with the Ollama API
+ * Service for interacting with the Ollama API with timezone support
  */
 const axios = require('axios');
 const fallbackGenerator = require('./fallback-generator');
@@ -32,7 +32,8 @@ async function generateText(systemPrompt, userPrompt, fallbackData = null) {
     formattedPrompt += userPrompt;
     
     // Add a clear instruction at the end to improve output quality
-    formattedPrompt += "\n\nPlease draft a concise, professional email response. If suggesting meeting times, be specific about exactly which time slots are available.";
+    const timezone = fallbackData?.timezone || 'UTC';
+    formattedPrompt += `\n\nPlease draft a concise, professional email response. If suggesting meeting times, be specific about exactly which time slots are available. All times mentioned should be understood to be in ${timezone} timezone.`;
     
     // Make the API request
     const response = await axios.post(url, {
@@ -70,7 +71,8 @@ async function generateText(systemPrompt, userPrompt, fallbackData = null) {
           sender: fallbackData.senderName,
           content: fallbackData.emailContent
         },
-        fallbackData.availability
+        fallbackData.availability,
+        fallbackData.timezone || 'UTC'
       );
     }
     
