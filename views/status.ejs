@@ -42,7 +42,7 @@
   <script>
     document.addEventListener('DOMContentLoaded', async function() {
       try {
-        const response = await fetch('/status');
+        const response = await fetch('/status/api');
         const data = await response.json();
         
         const statusResults = document.getElementById('status-results');
