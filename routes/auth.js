@@ -10,7 +10,8 @@ router.get('/login', (req, res) => {
     scopes: scopes,
     redirectUri: process.env.REDIRECT_URI,
     // Add prompt behavior to force new login
-    prompt: 'select_account'
+    // prompt: 'select_account'
+    // prompt: 'select_account'
   };
 
   msalClient.getAuthCodeUrl(authCodeUrlParameters)
