@@ -115,7 +115,18 @@ router.post('/:id/draft', isAuthenticated, async (req, res) => {
     
     const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email. If the email mentions scheduling a meeting, suggest available times based on my calendar.`;
     
-    const draftResponse = await ollamaService.generateText(systemPrompt, userPrompt);
+    // Prepare fallback data
+    const fallbackData = {
+      subject: email.subject,
+      senderName: senderName,
+      emailContent: emailContent,
+      availability: calendarView.value.map(event => ({
+        start: event.start.dateTime,
+        end: event.end.dateTime
+      }))
+    };
+    
+    const draftResponse = await ollamaService.generateText(systemPrompt, userPrompt, fallbackData);
     
     // Create a draft email in Outlook
     const draft = {
