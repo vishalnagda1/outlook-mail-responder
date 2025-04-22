@@ -41,6 +41,11 @@ def login():
 def callback():
     code = request.args.get("code")
     token_result = get_token_from_code(code)
+    print("Token result:", token_result)
+    if "error" in token_result:
+        return f"Error: {token_result['error_description']}", 400
+    if "access_token" not in token_result:
+        return "Error: No access token received", 400
     session["access_token"] = token_result["access_token"]
     return redirect("/")
 
