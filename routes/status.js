@@ -1,0 +1,38 @@
+/**
+ * Routes for service status
+ */
+const express = require('express');
+const router = express.Router();
+const { isAuthenticated } = require('./auth');
+const statusChecker = require('../services/status-checker');
+
+// Get status of all services
+router.get('/', isAuthenticated, async (req, res) => {
+  try {
+    const ollamaStatus = await statusChecker.isOllamaAvailable();
+    const graphStatus = await statusChecker.isGraphApiAvailable(req.session.accessToken);
+    
+    res.json({
+      services: {
+        ollama: {
+          name: 'Ollama API',
+          status: ollamaStatus ? 'available' : 'unavailable',
+          model: process.env.OLLAMA_MODEL || 'mistral'
+        },
+        graph: {
+          name: 'Microsoft Graph API',
+          status: graphStatus ? 'available' : 'unavailable'
+        }
+      },
+      user: {
+        authenticated: req.session.isAuthenticated || false,
+        name: req.session.userName || null
+      }
+    });
+  } catch (error) {
+    console.error('Error checking services:', error);
+    res.status(500).json({ error: 'Error checking service status' });
+  }
+});
+
+module.exports = router;
