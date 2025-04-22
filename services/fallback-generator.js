@@ -1,7 +1,7 @@
 /**
  * Fallback response generator when Ollama is unavailable
  */
-const moment = require('moment');
+const moment = require('moment-timezone');
 const calendarProcessor = require('./calendar-processor');
 
 /**
@@ -11,9 +11,10 @@ const calendarProcessor = require('./calendar-processor');
  * @param {string} emailData.sender - The sender's name
  * @param {string} emailData.content - The email content
  * @param {Array} availability - Calendar availability
+ * @param {string} timezone - User's timezone
  * @returns {string} A templated response
  */
-function generateBasicResponse(emailData, availability) {
+function generateBasicResponse(emailData, availability, timezone = 'UTC') {
   const { subject, sender, content } = emailData;
   
   // Identify common email types based on keywords
@@ -27,18 +28,19 @@ function generateBasicResponse(emailData, availability) {
   let availabilitySection = '';
   
   if (isSchedulingRequest && availability && availability.length > 0) {
-    // Process with calendar processor
+    // Process with calendar processor using the user's timezone
     const calendarData = calendarProcessor.processCalendarForResponse(
       availability.map(slot => ({
         subject: slot.subject || 'Busy',
         start: slot.start,
         end: slot.end
       })),
-      content
+      content,
+      timezone
     );
     
     if (calendarData.hasAvailability) {
-      availabilitySection = "Based on my calendar, I have the following availability:\n\n";
+      availabilitySection = `Based on my calendar (${timezone} timezone), I have the following availability:\n\n`;
       
       Object.values(calendarData.availability).forEach(dayData => {
         if (dayData.hasAvailability) {
@@ -49,10 +51,10 @@ function generateBasicResponse(emailData, availability) {
         }
       });
     } else {
-      availabilitySection = "I've checked my calendar and unfortunately, I don't have any availability during the requested times. Here are some alternative time slots:\n\n";
+      availabilitySection = `I've checked my calendar (${timezone} timezone) and unfortunately, I don't have any availability during the requested times. Here are some alternative time slots:\n\n`;
       
       // Suggest next 3 business days with standard hours
-      const today = moment();
+      const today = moment().tz(timezone);
       let daysAdded = 0;
       let currentDay = today.clone();
       
@@ -85,7 +87,7 @@ function generateBasicResponse(emailData, availability) {
   } else if (isSchedulingRequest) {
     response += "I'd be happy to schedule a meeting with you.\n\n";
     response += availabilitySection + "\n";
-    response += "Please let me know which time works best for you, and I'll send a calendar invitation.\n\n";
+    response += `Please let me know which time works best for you, and I'll send a calendar invitation. All times are in my local timezone (${timezone}).\n\n`;
   } else if (isQuestion) {
     response += "I've received your question and will get back to you with an answer as soon as possible.\n\n";
   } else if (isInformation) {
