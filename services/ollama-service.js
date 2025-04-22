@@ -31,7 +31,7 @@ async function generateText(systemPrompt, userPrompt, fallbackData = null) {
     formattedPrompt += userPrompt;
     
     // Add a clear instruction at the end to improve output quality
-    formattedPrompt += "\n\nCarefully draft a concise, professional email response.";
+    formattedPrompt += "\n\nIf the mail required my availability then check my calendar availability and suggest suitable time slots accordingly otherwise ignore it and carefully draft a concise, professional email response. Do not include anything else apart from the email response.\n\n";
     
     // Make the API request
     const response = await axios.post(url, {
