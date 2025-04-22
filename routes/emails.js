@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated, getGraphClient } = require('./auth');
+const auth = require('./auth');
 const moment = require('moment');
 const ollamaService = require('../services/ollama-service');
 
 // Route to display unread emails
-router.get('/', isAuthenticated, async (req, res) => {
+router.get('/', auth.isAuthenticated, async (req, res) => {
   try {
-    const client = getGraphClient(req.session.accessToken);
+    const client = auth.getGraphClient(req.session.accessToken);
     
     // Get unread emails from inbox
     const unreadEmails = await client
@@ -32,9 +32,9 @@ router.get('/', isAuthenticated, async (req, res) => {
 });
 
 // Route to get a specific email's details
-router.get('/:id', isAuthenticated, async (req, res) => {
+router.get('/:id', auth.isAuthenticated, async (req, res) => {
   try {
-    const client = getGraphClient(req.session.accessToken);
+    const client = auth.getGraphClient(req.session.accessToken);
     const emailId = req.params.id;
     
     // Get full email content
@@ -77,9 +77,9 @@ router.get('/:id', isAuthenticated, async (req, res) => {
 });
 
 // Route to generate draft response
-router.post('/:id/draft', isAuthenticated, async (req, res) => {
+router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
   try {
-    const client = getGraphClient(req.session.accessToken);
+    const client = auth.getGraphClient(req.session.accessToken);
     const emailId = req.params.id;
     
     // Get original email
@@ -106,7 +106,7 @@ router.post('/:id/draft', isAuthenticated, async (req, res) => {
         ).join(', ')}.`
       : 'I have no scheduled meetings in the next few days.';
     
-    // Prepare data for OpenAI
+    // Prepare data for Ollama
     const emailContent = email.body.content.replace(/<[^>]*>/g, ' '); // Basic HTML stripping
     const senderName = email.from.emailAddress.name;
     
@@ -156,9 +156,9 @@ router.post('/:id/draft', isAuthenticated, async (req, res) => {
 });
 
 // Route to mark an email as read
-router.post('/:id/markRead', isAuthenticated, async (req, res) => {
+router.post('/:id/markRead', auth.isAuthenticated, async (req, res) => {
   try {
-    const client = getGraphClient(req.session.accessToken);
+    const client = auth.getGraphClient(req.session.accessToken);
     const emailId = req.params.id;
     
     await client
