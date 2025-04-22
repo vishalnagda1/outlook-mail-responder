@@ -1,10 +1,11 @@
 const { ConfidentialClientApplication } = require('@azure/msal-node');
 
-// MSAL configuration
+// MSAL configuration for multi-tenant (personal + work accounts)
 const msalConfig = {
   auth: {
     clientId: process.env.CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
+    // Use common authority instead of tenant-specific
+    authority: 'https://login.microsoftonline.com/common',
     clientSecret: process.env.CLIENT_SECRET
   },
   system: {
