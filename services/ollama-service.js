@@ -13,7 +13,7 @@ const fallbackGenerator = require('./fallback-generator');
  */
 async function generateText(systemPrompt, userPrompt, fallbackData = null) {
   try {
-    const url = process.env.OLLAMA_API_URL;
+    const url = `${process.env.OLLAMA_API_URL}/api/generate`;
     const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
     
     // Set timeout to 10 seconds
