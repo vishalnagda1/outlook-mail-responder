@@ -1,0 +1,17 @@
+{
+  "name": "outlook-mail-responder",
+  "version": "1.0.0",
+  "description": "App to read unread Outlook emails and create draft responses",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "nodemon app.js"
+  },
+  "keywords": [
+    "outlook;",
+    "email;",
+    "responder;"
+  ],
+  "author": "Vishal Nagda",
+  "license": "UNLICENSED"
+}
