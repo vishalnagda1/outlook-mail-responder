@@ -3,11 +3,11 @@
  */
 const express = require('express');
 const router = express.Router();
-const { isAuthenticated } = require('./auth');
+const auth = require('./auth');
 const statusChecker = require('../services/status-checker');
 
 // Render status page
-router.get('/', isAuthenticated, (req, res) => {
+router.get('/', auth.isAuthenticated, (req, res) => {
   res.render('status', {
     user: {
       name: req.session.userName,
@@ -17,7 +17,7 @@ router.get('/', isAuthenticated, (req, res) => {
 });
 
 // API endpoint for status data
-router.get('/api', isAuthenticated, async (req, res) => {
+router.get('/api', auth.isAuthenticated, async (req, res) => {
   try {
     const ollamaStatus = await statusChecker.isOllamaAvailable();
     const graphStatus = await statusChecker.isGraphApiAvailable(req.session.accessToken);
