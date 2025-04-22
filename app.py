@@ -43,3 +43,7 @@ def callback():
     token_result = get_token_from_code(code)
     session["access_token"] = token_result["access_token"]
     return redirect("/")
+
+
+if __name__ == "__main__":
+    app.run(port=5500, debug=True)
