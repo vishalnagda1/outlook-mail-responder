@@ -141,15 +141,28 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     // Ensure we have user's timezone
     if (!req.session.timezone) {
       try {
-        // Get user's timezone from Microsoft Graph
+        // Try to get user's timezone from Microsoft Graph
         const userSettings = await client
           .api('/me/mailboxSettings')
           .get();
         
         req.session.timezone = userSettings.timeZone || 'UTC';
+        console.log('Retrieved user timezone from Graph API:', req.session.timezone);
       } catch (error) {
-        console.warn('Could not fetch user timezone, defaulting to UTC:', error);
-        req.session.timezone = 'UTC';
+        console.warn('Could not fetch user timezone from Graph API:', error.message);
+        
+        // Fallback 1: Try to detect timezone from request headers or client browser
+        if (req.query.timezone) {
+          // If passed as a query parameter (useful for testing)
+          req.session.timezone = req.query.timezone;
+          console.log('Using timezone from query param:', req.session.timezone);
+        } else {
+          // Fallback 2: Use a reasonable default based on user behavior or region
+          // For simplicity, we're using a fixed timezone - you could implement more sophisticated detection
+          const defaultTimezone = process.env.DEFAULT_TIMEZONE || 'Asia/Kolkata';
+          req.session.timezone = defaultTimezone;
+          console.log('Using default timezone:', req.session.timezone);
+        }
       }
     }
     
