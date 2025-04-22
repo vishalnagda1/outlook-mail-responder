@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System Status - Outlook Email Assistant</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="container mt-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1>System Status</h1>
+      <div>
+        <a href="/emails" class="btn btn-outline-secondary me-2">View Emails</a>
+        <a href="/" class="btn btn-outline-secondary me-2">Home</a>
+        <a href="/auth/logout" class="btn btn-outline-secondary">Sign Out</a>
+      </div>
+    </div>
+    
+    <div class="card mb-4">
+      <div class="card-header">
+        <h5 class="card-title mb-0">Service Status</h5>
+      </div>
+      <div class="card-body">
+        <div id="status-loading" class="text-center">
+          <div class="spinner-border" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="mt-2">Checking service status...</p>
+        </div>
+        
+        <div id="status-results" class="d-none">
+          <!-- Will be populated by JavaScript -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async function() {
+      try {
+        const response = await fetch('/status');
+        const data = await response.json();
+        
+        const statusResults = document.getElementById('status-results');
+        const statusLoading = document.getElementById('status-loading');
+        
+        // Create service status indicators
+        let servicesHtml = '<ul class="list-group">';
+        
+        // Add Ollama status
+        const ollamaStatus = data.services.ollama;
+        servicesHtml += `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <h5>${ollamaStatus.name}</h5>
+              <small>Model: ${ollamaStatus.model}</small>
+            </div>
+            <span class="badge bg-${ollamaStatus.status === 'available' ? 'success' : 'danger'} rounded-pill">
+              ${ollamaStatus.status === 'available' ? 
+                '<i class="bi bi-check-circle"></i> Available' : 
+                '<i class="bi bi-x-circle"></i> Unavailable'}
+            </span>
+          </li>
+        `;
+        
+        // Add Graph API status
+        const graphStatus = data.services.graph;
+        servicesHtml += `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <h5>${graphStatus.name}</h5>
+              <small>User: ${data.user.name || 'Not authenticated'}</small>
+            </div>
+            <span class="badge bg-${graphStatus.status === 'available' ? 'success' : 'danger'} rounded-pill">
+              ${graphStatus.status === 'available' ? 
+                '<i class="bi bi-check-circle"></i> Available' : 
+                '<i class="bi bi-x-circle"></i> Unavailable'}
+            </span>
+          </li>
+        `;
+        
+        servicesHtml += '</ul>';
+        
+        // Display service information
+        statusResults.innerHTML = servicesHtml;
+        statusResults.classList.remove('d-none');
+        statusLoading.classList.add('d-none');
+        
+      } catch (error) {
+        console.error('Error fetching status:', error);
+        document.getElementById('status-loading').innerHTML = `
+          <div class="alert alert-danger" role="alert">
+            <i class="bi bi-exclamation-triangle-fill"></i>
+            Error fetching service status. Please try again later.
+          </div>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>
