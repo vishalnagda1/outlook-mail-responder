@@ -6,8 +6,18 @@ const router = express.Router();
 const { isAuthenticated } = require('./auth');
 const statusChecker = require('../services/status-checker');
 
-// Get status of all services
-router.get('/', isAuthenticated, async (req, res) => {
+// Render status page
+router.get('/', isAuthenticated, (req, res) => {
+  res.render('status', {
+    user: {
+      name: req.session.userName,
+      email: req.session.userEmail
+    }
+  });
+});
+
+// API endpoint for status data
+router.get('/api', isAuthenticated, async (req, res) => {
   try {
     const ollamaStatus = await statusChecker.isOllamaAvailable();
     const graphStatus = await statusChecker.isGraphApiAvailable(req.session.accessToken);
