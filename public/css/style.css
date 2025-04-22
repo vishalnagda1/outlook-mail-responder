@@ -1,0 +1,53 @@
+/* Main styling for Outlook Email Assistant */
+body {
+    background-color: #f8f9fa;
+    color: #333;
+  }
+  
+  .container {
+    max-width: 1000px;
+  }
+  
+  .card {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    margin-bottom: 20px;
+  }
+  
+  .card-header {
+    background-color: #f1f3f5;
+    border-bottom: 1px solid #dee2e6;
+  }
+  
+  .list-group-item {
+    transition: all 0.2s ease;
+  }
+  
+  .list-group-item:hover {
+    background-color: #f1f3f5;
+  }
+  
+  .email-body {
+    background-color: white;
+    padding: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+  }
+  
+  .mark-read-btn {
+    margin-left: auto;
+  }
+  
+  /* Animation for loading */
+  .spinner-border {
+    margin-right: 5px;
+  }
+  
+  /* Formatting for draft response */
+  #draftContent {
+    background-color: white;
+    padding: 15px;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    white-space: pre-line;
+  }
