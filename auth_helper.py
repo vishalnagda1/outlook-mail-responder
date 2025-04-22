@@ -12,8 +12,10 @@ def build_msal_app():
 
 
 def build_auth_url():
+    # Only include Graph API scopes here — NOT reserved ones
+    scopes = ["Mail.Read", "Mail.ReadWrite", "Mail.Send", "Calendars.Read"]
     return build_msal_app().get_authorization_request_url(
-        scopes=os.getenv("SCOPE").split(), redirect_uri=os.getenv("REDIRECT_URI")
+        scopes=scopes, redirect_uri=os.getenv("REDIRECT_URI")
     )
 
 
