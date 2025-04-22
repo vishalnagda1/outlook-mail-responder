@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const path = require('path');
-const authRoutes = require('./routes/auth');
+const auth = require('./routes/auth');
 const emailRoutes = require('./routes/emails');
 const statusRoutes = require('./routes/status');
 
@@ -27,7 +27,7 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('view engine', 'ejs');
 
 // Routes
-app.use('/auth', authRoutes);
+app.use('/auth', auth.router);
 app.use('/emails', emailRoutes);
 app.use('/status', statusRoutes);
 
