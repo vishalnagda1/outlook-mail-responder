@@ -19,10 +19,15 @@ def build_auth_url():
     )
 
 
-def get_token_from_code(auth_code):
+def get_token_from_code(code):
+    scopes = [
+        "Mail.Read",
+        "Mail.ReadWrite",
+        "Mail.Send",
+        "Calendars.Read",
+    ]
+
     result = build_msal_app().acquire_token_by_authorization_code(
-        auth_code,
-        scopes=os.getenv("SCOPE").split(),
-        redirect_uri=os.getenv("REDIRECT_URI"),
+        code, scopes=scopes, redirect_uri=os.getenv("REDIRECT_URI")
     )
     return result
