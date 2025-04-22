@@ -28,7 +28,8 @@ const scopes = [
   'mail.read',
   'mail.send',
   'calendars.read',
-  'mail.readwrite'
+  'mail.readwrite',
+  'MailboxSettings.Read' // Added permission for mailbox settings
 ];
 
 module.exports = {
