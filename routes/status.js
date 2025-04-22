@@ -27,7 +27,7 @@ router.get('/api', auth.isAuthenticated, async (req, res) => {
         ollama: {
           name: 'Ollama API',
           status: ollamaStatus ? 'available' : 'unavailable',
-          model: process.env.OLLAMA_MODEL || 'mistral'
+          model: process.env.OLLAMA_MODEL || 'llama3.1:8b'
         },
         graph: {
           name: 'Microsoft Graph API',
