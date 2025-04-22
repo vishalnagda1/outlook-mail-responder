@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require('./auth');
 const moment = require('moment');
 const ollamaService = require('../services/ollama-service');
+const calendarProcessor = require('../services/calendar-processor');
 
 // Route to display unread emails
 router.get('/', auth.isAuthenticated, async (req, res) => {
@@ -43,13 +44,13 @@ router.get('/:id', auth.isAuthenticated, async (req, res) => {
       .select('id,subject,body,receivedDateTime,from,toRecipients,ccRecipients,importance,hasAttachments')
       .get();
     
-    // Check calendar availability for the next few days if needed
+    // Check calendar availability for the next 7 days
     const now = new Date();
-    const endOfWeek = new Date(now);
-    endOfWeek.setDate(now.getDate() + 5);
+    const nextWeek = new Date(now);
+    nextWeek.setDate(now.getDate() + 7);
     
     const calendarView = await client
-      .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${endOfWeek.toISOString()}`)
+      .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${nextWeek.toISOString()}`)
       .select('subject,start,end,location')
       .orderby('start/dateTime')
       .get();
@@ -88,32 +89,103 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       .select('id,subject,body,receivedDateTime,from,toRecipients')
       .get();
     
-    // Get calendar availability
+    // Get calendar availability for the next 7 days
     const now = new Date();
-    const endOfWeek = new Date(now);
-    endOfWeek.setDate(now.getDate() + 5);
+    const nextWeek = new Date(now);
+    nextWeek.setDate(now.getDate() + 7);
     
     const calendarView = await client
-      .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${endOfWeek.toISOString()}`)
+      .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${nextWeek.toISOString()}`)
       .select('subject,start,end')
       .orderby('start/dateTime')
       .get();
     
-    // Format calendar events for AI context
-    const availabilityText = calendarView.value.length > 0 
-      ? `My upcoming meetings: ${calendarView.value.map(e => 
-          `${e.subject} on ${moment(e.start.dateTime).format('MMMM D')} from ${moment(e.start.dateTime).format('h:mm A')} to ${moment(e.end.dateTime).format('h:mm A')}`
-        ).join(', ')}.`
-      : 'I have no scheduled meetings in the next few days.';
-    
-    // Prepare data for Ollama
+    // Extract text from email content
     const emailContent = email.body.content.replace(/<[^>]*>/g, ' '); // Basic HTML stripping
     const senderName = email.from.emailAddress.name;
     
-    // Get AI to draft response using Ollama
-    const systemPrompt = `You are an email assistant that drafts professional responses. Consider the calendar availability when mentioned. Be concise but polite.`;
+    // Process calendar data with new calendar processor
+    const calendarData = calendarProcessor.processCalendarForResponse(
+      calendarView.value.map(event => ({
+        subject: event.subject,
+        start: event.start.dateTime,
+        end: event.end.dateTime
+      })),
+      emailContent
+    );
     
-    const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email. If the email mentions scheduling a meeting, suggest available times based on my calendar.`;
+    // Prepare availability information in a structured way
+    let availabilityText = '';
+    
+    if (calendarData.hasAvailability) {
+      availabilityText = "Based on my calendar, I have the following availability:\n\n";
+      
+      Object.values(calendarData.availability).forEach(dayAvailability => {
+        if (dayAvailability.hasAvailability) {
+          availabilityText += `- ${dayAvailability.dayOfWeek}, ${dayAvailability.date}:\n`;
+          dayAvailability.slots.slice(0, 5).forEach(slot => {
+            availabilityText += `  * ${slot.startFormatted} - ${slot.endFormatted}\n`;
+          });
+        } else {
+          availabilityText += `- ${dayAvailability.dayOfWeek}, ${dayAvailability.date}: No available slots\n`;
+        }
+      });
+    } else {
+      availabilityText = "I've checked my calendar and unfortunately, I don't have any availability during the requested times. Here is my upcoming schedule for reference:\n\n";
+      
+      // Group events by date
+      const eventsByDate = {};
+      calendarView.value.forEach(event => {
+        const date = moment(event.start.dateTime).format('YYYY-MM-DD');
+        if (!eventsByDate[date]) {
+          eventsByDate[date] = [];
+        }
+        eventsByDate[date].push({
+          subject: event.subject,
+          start: moment(event.start.dateTime).format('h:mm A'),
+          end: moment(event.end.dateTime).format('h:mm A')
+        });
+      });
+      
+      // List events for the requested dates or the next 3 days
+      const datesToShow = calendarData.requestedDates.length > 0 
+        ? calendarData.requestedDates.map(d => d.date) 
+        : Object.keys(eventsByDate).slice(0, 3);
+      
+      datesToShow.forEach(date => {
+        const formattedDate = moment(date).format('dddd, MMMM D, YYYY');
+        availabilityText += `- ${formattedDate}:\n`;
+        
+        if (eventsByDate[date] && eventsByDate[date].length > 0) {
+          eventsByDate[date].forEach(event => {
+            availabilityText += `  * ${event.start} - ${event.end}: ${event.subject}\n`;
+          });
+        } else {
+          availabilityText += "  * No scheduled events\n";
+        }
+      });
+    }
+    
+    // Get AI to draft response using Ollama
+    const systemPrompt = `You are an email assistant that drafts professional responses. You are especially good at scheduling meetings based on calendar availability.
+
+Guidelines:
+1. Be concise but polite and professional
+2. If the email is asking about availability for a meeting, recommend specific time slots that are available 
+3. Format time slots clearly (e.g., "2:30 PM - 3:00 PM on Wednesday, April 24")
+4. If no slots are available at the requested times, suggest alternative times or dates
+5. Address the sender by name
+6. End with a professional sign-off`;
+    
+    const userPrompt = `Original email from ${senderName}:
+Subject: ${email.subject}
+
+${emailContent}
+
+Calendar Availability Information:
+${availabilityText}
+
+Draft a professional response to this email. Focus on accurately suggesting the available time slots if the email is about scheduling a meeting. Be specific about the days and times available.`;
     
     // Prepare fallback data
     const fallbackData = {
@@ -122,7 +194,8 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       emailContent: emailContent,
       availability: calendarView.value.map(event => ({
         start: event.start.dateTime,
-        end: event.end.dateTime
+        end: event.end.dateTime,
+        subject: event.subject
       }))
     };
     
