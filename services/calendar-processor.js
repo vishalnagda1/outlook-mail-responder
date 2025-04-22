@@ -1,7 +1,7 @@
 /**
- * Service to process calendar data for email responses
+ * Service to process calendar data for email responses with timezone support
  */
-const moment = require('moment');
+const moment = require('moment-timezone');
 const timeConverter = require('../utils/time-converter');
 
 /**
@@ -140,10 +140,11 @@ function getMonthName(month) {
 /**
  * Converts date string to YYYY-MM-DD format
  * @param {string} dateStr - Date string in various formats
+ * @param {string} timezone - User's timezone
  * @returns {string} Date in YYYY-MM-DD format
  */
-function standardizeDate(dateStr) {
-  return moment(new Date(dateStr)).format('YYYY-MM-DD');
+function standardizeDate(dateStr, timezone = 'UTC') {
+  return moment.tz(new Date(dateStr), timezone).format('YYYY-MM-DD');
 }
 
 /**
@@ -159,16 +160,17 @@ function standardizeTime(timeStr) {
  * Process calendar events and requested schedule to find available slots
  * @param {Array} events - Calendar events 
  * @param {string} emailContent - Email content to extract date/time from
+ * @param {string} timezone - User's timezone
  * @returns {Object} Processed availability data for response generation
  */
-function processCalendarForResponse(events, emailContent) {
+function processCalendarForResponse(events, emailContent, timezone = 'UTC') {
   // Extract date and time info from email
   const extractedInfo = extractDateTimeInfo(emailContent);
   
-  // Convert calendar events to slot format
+  // Convert calendar events to slot format and adjust for timezone
   const calendarEvents = events.map(event => ({
-    start: event.start,
-    end: event.end,
+    start: event.start, // Keep in UTC for proper conversion later
+    end: event.end,     // Keep in UTC for proper conversion later
     title: event.subject
   }));
   
@@ -177,12 +179,12 @@ function processCalendarForResponse(events, emailContent) {
   
   if (extractedInfo.dates.length > 0) {
     // Use explicitly mentioned dates
-    datesToCheck = extractedInfo.dates.map(date => standardizeDate(date));
+    datesToCheck = extractedInfo.dates.map(date => standardizeDate(date, timezone));
   } else if (extractedInfo.daysOfWeek.length > 0) {
     // Use mentioned days of week
-    const today = moment();
+    const today = moment().tz(timezone);
     extractedInfo.daysOfWeek.forEach(day => {
-      const targetDay = moment().day(day);
+      const targetDay = moment().tz(timezone).day(day);
       if (targetDay.isBefore(today)) {
         targetDay.add(7, 'days');
       }
@@ -190,7 +192,7 @@ function processCalendarForResponse(events, emailContent) {
     });
   } else {
     // Fallback to next 3 business days
-    const today = moment();
+    const today = moment().tz(timezone);
     let daysAdded = 0;
     let currentDay = today.clone();
     
@@ -219,13 +221,14 @@ function processCalendarForResponse(events, emailContent) {
     datesToCheck,
     startTime,
     endTime,
-    extractedInfo.duration
+    extractedInfo.duration,
+    timezone
   );
   
   return {
     requestedDates: datesToCheck.map(date => ({
       date,
-      formatted: moment(date).format('dddd, MMMM D, YYYY')
+      formatted: moment.tz(date, timezone).format('dddd, MMMM D, YYYY')
     })),
     requestedTimeRange: {
       start: startTime,
@@ -234,7 +237,8 @@ function processCalendarForResponse(events, emailContent) {
     },
     requestedDuration: extractedInfo.duration,
     availability: availability,
-    hasAvailability: Object.values(availability).some(day => day.hasAvailability)
+    hasAvailability: Object.values(availability).some(day => day.hasAvailability),
+    timezone: timezone
   };
 }
 
