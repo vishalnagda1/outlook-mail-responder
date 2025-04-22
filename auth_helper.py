@@ -1,16 +1,26 @@
-# auth_helper.py
-from msal import ConfidentialClientApplication
-
-CLIENT_ID = "your-client-id"
-CLIENT_SECRET = "your-client-secret"
-TENANT_ID = "your-tenant-id"
-AUTHORITY = f"https://login.microsoftonline.com/{TENANT_ID}"
-SCOPE = ["https://graph.microsoft.com/.default"]
+import os
+import msal
+from flask import session
 
 
-def get_access_token():
-    app = ConfidentialClientApplication(
-        CLIENT_ID, authority=AUTHORITY, client_credential=CLIENT_SECRET
+def build_msal_app():
+    return msal.ConfidentialClientApplication(
+        os.getenv("CLIENT_ID"),
+        authority=os.getenv("AUTHORITY"),
+        client_credential=os.getenv("CLIENT_SECRET"),
     )
-    token = app.acquire_token_for_client(scopes=SCOPE)
-    return token["access_token"]
+
+
+def build_auth_url():
+    return build_msal_app().get_authorization_request_url(
+        scopes=os.getenv("SCOPE").split(), redirect_uri=os.getenv("REDIRECT_URI")
+    )
+
+
+def get_token_from_code(auth_code):
+    result = build_msal_app().acquire_token_by_authorization_code(
+        auth_code,
+        scopes=os.getenv("SCOPE").split(),
+        redirect_uri=os.getenv("REDIRECT_URI"),
+    )
+    return result
