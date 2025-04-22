@@ -16,25 +16,43 @@ async function generateText(systemPrompt, userPrompt, fallbackData = null) {
     const url = `${process.env.OLLAMA_API_URL}/api/generate`;
     const model = process.env.OLLAMA_MODEL || 'llama3.1:8b';
     
-    // Set timeout to 10 seconds
+    // Set timeout to 15 seconds
     const axiosConfig = {
-      timeout: 10000
+      timeout: 15000
     };
     
-    const prompt = `<s>\n${systemPrompt}\n</s>\n\n${userPrompt}`;
+    // For better results with Ollama, provide a well-structured prompt
+    let formattedPrompt = '';
     
+    // Add system instruction
+    formattedPrompt += `<s>\n${systemPrompt}\n</s>\n\n`;
+    
+    // Add user prompt with formatting for better understanding
+    formattedPrompt += userPrompt;
+    
+    // Add a clear instruction at the end to improve output quality
+    formattedPrompt += "\n\nCarefully draft a concise, professional email response.";
+    
+    // Make the API request
     const response = await axios.post(url, {
       model: model,
-      prompt: prompt,
+      prompt: formattedPrompt,
       stream: false,
       options: {
-        temperature: 0.7,
+        temperature: 0.6,  // Lower temperature for more predictable responses
         top_p: 0.9,
-        top_k: 40
+        top_k: 40,
+        num_predict: 1024  // Ensure we get a complete response
       }
     }, axiosConfig);
     
-    return response.data.response;
+    // Process the response to ensure it's properly formatted
+    let generatedText = response.data.response.trim();
+    
+    // Sanitize the response to remove common issues in LLM outputs
+    generatedText = sanitizeResponse(generatedText);
+    
+    return generatedText;
   } catch (error) {
     console.error('Error calling Ollama API:', error.message);
     if (error.response) {
@@ -57,6 +75,35 @@ async function generateText(systemPrompt, userPrompt, fallbackData = null) {
     
     throw new Error('Failed to generate text with Ollama');
   }
+}
+
+/**
+ * Sanitize and improve the LLM-generated response
+ * @param {string} text - The generated text to sanitize
+ * @returns {string} Cleaned and improved text
+ */
+function sanitizeResponse(text) {
+  // Remove any potential signature blocks that don't belong
+  text = text.replace(/^--+\s*\n.*$/gm, '');
+  
+  // Remove markdown formatting if present (some models add it)
+  text = text.replace(/^```email\s*/g, '').replace(/```\s*$/g, '');
+  
+  // Clean up any duplicated greeting lines
+  const lines = text.split('\n');
+  let seenGreeting = false;
+  const cleanedLines = lines.filter(line => {
+    const isGreeting = /^(dear|hello|hi|greetings|good (morning|afternoon|evening))/i.test(line);
+    if (isGreeting && seenGreeting) {
+      return false; // Skip duplicate greetings
+    }
+    if (isGreeting) {
+      seenGreeting = true;
+    }
+    return true;
+  });
+  
+  return cleanedLines.join('\n');
 }
 
 module.exports = {
