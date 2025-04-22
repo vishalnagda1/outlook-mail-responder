@@ -1,8 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('./auth');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const ollamaService = require('../services/ollama-service');
+
+const userTimeZone = 'Asia/Calcutta';
 
 // Route to display unread emails
 router.get('/', auth.isAuthenticated, async (req, res) => {
@@ -44,21 +46,25 @@ router.get('/:id', auth.isAuthenticated, async (req, res) => {
       .get();
     
     // Check calendar availability for the next few days if needed
-    const now = new Date();
-    const endOfWeek = new Date(now);
-    endOfWeek.setDate(now.getDate() + 5);
+    let now = new Date();
+    let endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+
+    now = moment.tz(now, userTimeZone);
+    endOfWeek = moment.tz(endOfWeek, userTimeZone);
     
     const calendarView = await client
       .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${endOfWeek.toISOString()}`)
       .select('subject,start,end,location')
+      .top(10)
       .orderby('start/dateTime')
       .get();
     
     // Format calendar events for display
     const formattedEvents = calendarView.value.map(event => ({
       subject: event.subject,
-      start: moment(event.start.dateTime).format('YYYY-MM-DD HH:mm'),
-      end: moment(event.end.dateTime).format('YYYY-MM-DD HH:mm'),
+      start: moment.tz(event.start.dateTime, event.start.timeZone).tz(userTimeZone).format('YYYY-MM-DD HH:mm'),
+      end: moment.tz(event.end.dateTime, event.start.timeZone).tz(userTimeZone).format('YYYY-MM-DD HH:mm'),
       location: event.location.displayName
     }));
     
@@ -89,22 +95,28 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       .get();
     
     // Get calendar availability
-    const now = new Date();
-    const endOfWeek = new Date(now);
-    endOfWeek.setDate(now.getDate() + 5);
+    let now = new Date();
+    let endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + 7);
+
+    now = moment.tz(now, userTimeZone);
+    endOfWeek = moment.tz(endOfWeek, userTimeZone);
     
     const calendarView = await client
       .api(`/me/calendarView?startDateTime=${now.toISOString()}&endDateTime=${endOfWeek.toISOString()}`)
       .select('subject,start,end')
+      .top(50)
       .orderby('start/dateTime')
       .get();
     
     // Format calendar events for AI context
     const availabilityText = calendarView.value.length > 0 
-      ? `My upcoming meetings: ${calendarView.value.map(e => 
-          `${e.subject} on ${moment(e.start.dateTime).format('MMMM D')} from ${moment(e.start.dateTime).format('h:mm A')} to ${moment(e.end.dateTime).format('h:mm A')}`
+      ? `##### My upcoming meetings: ${calendarView.value.map(e => 
+          `\n- ${e.subject} on ${moment.tz(e.start.dateTime, e.start.timeZone).tz(userTimeZone).format('MMMM D')} from ${moment.tz(e.start.dateTime, e.start.timeZone).tz(userTimeZone).format('h:mm A')} to ${moment.tz(e.end.dateTime, e.end.timeZone).tz(userTimeZone).format('h:mm A')}`
         ).join(', ')}.`
       : 'I have no scheduled meetings in the next few days.';
+
+    console.dir(availabilityText, { depth: null });
     
     // Prepare data for Ollama
     const emailContent = email.body.content.replace(/<[^>]*>/g, ' '); // Basic HTML stripping
@@ -121,8 +133,8 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       senderName: senderName,
       emailContent: emailContent,
       availability: calendarView.value.map(event => ({
-        start: event.start.dateTime,
-        end: event.end.dateTime
+        start: moment.tz(event.start.dateTime, event.start.timeZone).tz(userTimeZone),
+        end: moment.tz(event.end.dateTime, event.end.timeZone).tz(userTimeZone)
       }))
     };
     
