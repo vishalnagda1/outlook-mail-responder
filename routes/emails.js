@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const auth = require('./auth');
-const moment = require('moment');
+const moment = require('moment-timezone');
 const ollamaService = require('../services/ollama-service');
 const calendarProcessor = require('../services/calendar-processor');
+const timeConverter = require('../utils/time-converter');
 
 // Route to display unread emails
 router.get('/', auth.isAuthenticated, async (req, res) => {
@@ -19,11 +20,27 @@ router.get('/', auth.isAuthenticated, async (req, res) => {
       .orderby('receivedDateTime DESC')
       .get();
     
+    // Store user timezone in session if not already set
+    if (!req.session.timezone) {
+      try {
+        // Get user's timezone from Microsoft Graph
+        const userSettings = await client
+          .api('/me/mailboxSettings')
+          .get();
+        
+        req.session.timezone = userSettings.timeZone || 'UTC';
+      } catch (error) {
+        console.warn('Could not fetch user timezone, defaulting to UTC:', error);
+        req.session.timezone = 'UTC';
+      }
+    }
+    
     res.render('emails', { 
       emails: unreadEmails.value,
       user: {
         name: req.session.userName,
-        email: req.session.userEmail
+        email: req.session.userEmail,
+        timezone: req.session.timezone
       }
     });
   } catch (error) {
@@ -55,12 +72,32 @@ router.get('/:id', auth.isAuthenticated, async (req, res) => {
       .orderby('start/dateTime')
       .get();
     
-    // Format calendar events for display
+    // Ensure we have user's timezone
+    if (!req.session.timezone) {
+      try {
+        // Get user's timezone from Microsoft Graph
+        const userSettings = await client
+          .api('/me/mailboxSettings')
+          .get();
+        
+        req.session.timezone = userSettings.timeZone || 'UTC';
+      } catch (error) {
+        console.warn('Could not fetch user timezone, defaulting to UTC:', error);
+        req.session.timezone = 'UTC';
+      }
+    }
+    
+    const timezone = req.session.timezone;
+    
+    // Format calendar events for display in user's timezone
     const formattedEvents = calendarView.value.map(event => ({
       subject: event.subject,
-      start: moment(event.start.dateTime).format('YYYY-MM-DD HH:mm'),
-      end: moment(event.end.dateTime).format('YYYY-MM-DD HH:mm'),
-      location: event.location.displayName
+      start: timeConverter.convertToLocalTime(event.start.dateTime, timezone),
+      end: timeConverter.convertToLocalTime(event.end.dateTime, timezone),
+      location: event.location.displayName,
+      // Keep original UTC times for processing
+      startUtc: event.start.dateTime,
+      endUtc: event.end.dateTime
     }));
     
     res.render('email-detail', { 
@@ -68,7 +105,8 @@ router.get('/:id', auth.isAuthenticated, async (req, res) => {
       events: formattedEvents,
       user: {
         name: req.session.userName,
-        email: req.session.userEmail
+        email: req.session.userEmail,
+        timezone: timezone
       }
     });
   } catch (error) {
@@ -89,7 +127,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       .select('id,subject,body,receivedDateTime,from,toRecipients')
       .get();
     
-    // Get calendar availability for the next 7 days
+    // Check calendar availability for the next 7 days
     const now = new Date();
     const nextWeek = new Date(now);
     nextWeek.setDate(now.getDate() + 7);
@@ -100,25 +138,43 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
       .orderby('start/dateTime')
       .get();
     
+    // Ensure we have user's timezone
+    if (!req.session.timezone) {
+      try {
+        // Get user's timezone from Microsoft Graph
+        const userSettings = await client
+          .api('/me/mailboxSettings')
+          .get();
+        
+        req.session.timezone = userSettings.timeZone || 'UTC';
+      } catch (error) {
+        console.warn('Could not fetch user timezone, defaulting to UTC:', error);
+        req.session.timezone = 'UTC';
+      }
+    }
+    
+    const timezone = req.session.timezone;
+    
     // Extract text from email content
     const emailContent = email.body.content.replace(/<[^>]*>/g, ' '); // Basic HTML stripping
     const senderName = email.from.emailAddress.name;
     
-    // Process calendar data with new calendar processor
+    // Process calendar data with the calendar processor using user's timezone
     const calendarData = calendarProcessor.processCalendarForResponse(
       calendarView.value.map(event => ({
         subject: event.subject,
-        start: event.start.dateTime,
-        end: event.end.dateTime
+        start: event.start.dateTime, // Using UTC time from API
+        end: event.end.dateTime     // Using UTC time from API
       })),
-      emailContent
+      emailContent,
+      timezone
     );
     
     // Prepare availability information in a structured way
     let availabilityText = '';
     
     if (calendarData.hasAvailability) {
-      availabilityText = "Based on my calendar, I have the following availability:\n\n";
+      availabilityText = `Based on my calendar (${timezone} timezone), I have the following availability for a ${calendarData.requestedDuration}-minute meeting:\n\n`;
       
       Object.values(calendarData.availability).forEach(dayAvailability => {
         if (dayAvailability.hasAvailability) {
@@ -127,23 +183,23 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
             availabilityText += `  * ${slot.startFormatted} - ${slot.endFormatted}\n`;
           });
         } else {
-          availabilityText += `- ${dayAvailability.dayOfWeek}, ${dayAvailability.date}: No available slots\n`;
+          availabilityText += `- ${dayAvailability.dayOfWeek}, ${dayAvailability.date}: No available slots during requested hours\n`;
         }
       });
     } else {
-      availabilityText = "I've checked my calendar and unfortunately, I don't have any availability during the requested times. Here is my upcoming schedule for reference:\n\n";
+      availabilityText = `I've checked my calendar (${timezone} timezone) and unfortunately, I don't have any availability during the requested times. Here is my upcoming schedule for reference:\n\n`;
       
       // Group events by date
       const eventsByDate = {};
       calendarView.value.forEach(event => {
-        const date = moment(event.start.dateTime).format('YYYY-MM-DD');
+        const date = moment(event.start.dateTime).tz(timezone).format('YYYY-MM-DD');
         if (!eventsByDate[date]) {
           eventsByDate[date] = [];
         }
         eventsByDate[date].push({
           subject: event.subject,
-          start: moment(event.start.dateTime).format('h:mm A'),
-          end: moment(event.end.dateTime).format('h:mm A')
+          start: moment(event.start.dateTime).tz(timezone).format('h:mm A'),
+          end: moment(event.end.dateTime).tz(timezone).format('h:mm A')
         });
       });
       
@@ -153,7 +209,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
         : Object.keys(eventsByDate).slice(0, 3);
       
       datesToShow.forEach(date => {
-        const formattedDate = moment(date).format('dddd, MMMM D, YYYY');
+        const formattedDate = moment.tz(date, timezone).format('dddd, MMMM D, YYYY');
         availabilityText += `- ${formattedDate}:\n`;
         
         if (eventsByDate[date] && eventsByDate[date].length > 0) {
@@ -164,6 +220,63 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
           availabilityText += "  * No scheduled events\n";
         }
       });
+      
+      // Suggest alternative dates
+      const today = moment().tz(timezone);
+      let daysAdded = 0;
+      let currentDay = today.clone();
+      
+      availabilityText += "\nHere are some alternative time slots I could offer:\n\n";
+      
+      while (daysAdded < 3) {
+        currentDay.add(1, 'day');
+        const dayOfWeek = currentDay.day();
+        
+        if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not weekend
+          const dateStr = currentDay.format('dddd, MMMM D');
+          const dateKey = currentDay.format('YYYY-MM-DD');
+          availabilityText += `- ${dateStr}:\n`;
+          
+          const dayEvents = eventsByDate[dateKey] || [];
+          const busyTimes = dayEvents.map(event => ({
+            start: moment.tz(`${dateKey} ${event.start}`, 'YYYY-MM-DD h:mm A', timezone),
+            end: moment.tz(`${dateKey} ${event.end}`, 'YYYY-MM-DD h:mm A', timezone)
+          }));
+          
+          // Find gaps in the schedule
+          const workStart = moment.tz(`${dateKey} 9:00 AM`, 'YYYY-MM-DD h:mm A', timezone);
+          const workEnd = moment.tz(`${dateKey} 5:00 PM`, 'YYYY-MM-DD h:mm A', timezone);
+          const slots = [];
+          
+          let currentSlot = workStart.clone();
+          
+          while (currentSlot.clone().add(30, 'minutes').isSameOrBefore(workEnd)) {
+            const slotEnd = currentSlot.clone().add(30, 'minutes');
+            const isOverlapping = busyTimes.some(busy => 
+              (currentSlot.isSameOrAfter(busy.start) && currentSlot.isBefore(busy.end)) ||
+              (slotEnd.isAfter(busy.start) && slotEnd.isSameOrBefore(busy.end)) ||
+              (currentSlot.isBefore(busy.start) && slotEnd.isAfter(busy.end))
+            );
+            
+            if (!isOverlapping) {
+              slots.push(`  * ${currentSlot.format('h:mm A')} - ${slotEnd.format('h:mm A')}\n`);
+              if (slots.length >= 3) break; // Limit to 3 suggestions per day
+            }
+            
+            currentSlot.add(30, 'minutes');
+          }
+          
+          if (slots.length > 0) {
+            slots.forEach(slot => {
+              availabilityText += slot;
+            });
+          } else {
+            availabilityText += "  * Fully booked for this day\n";
+          }
+          
+          daysAdded++;
+        }
+      }
     }
     
     // Get AI to draft response using Ollama
@@ -175,17 +288,18 @@ Guidelines:
 3. Format time slots clearly (e.g., "2:30 PM - 3:00 PM on Wednesday, April 24")
 4. If no slots are available at the requested times, suggest alternative times or dates
 5. Address the sender by name
-6. End with a professional sign-off`;
+6. End with a professional sign-off
+7. The times provided are in the user's local timezone (${timezone}), so refer to them as-is without timezone conversion`;
     
     const userPrompt = `Original email from ${senderName}:
 Subject: ${email.subject}
 
 ${emailContent}
 
-Calendar Availability Information:
+Calendar Availability Information (all times in ${timezone} timezone):
 ${availabilityText}
 
-Draft a professional response to this email. Focus on accurately suggesting the available time slots if the email is about scheduling a meeting. Be specific about the days and times available.`;
+Draft a professional response to this email. Focus on accurately suggesting the available time slots if the email is about scheduling a meeting. Be specific about the days and times available. Include a reference to the timezone (${timezone}) to avoid confusion.`;
     
     // Prepare fallback data
     const fallbackData = {
@@ -196,7 +310,8 @@ Draft a professional response to this email. Focus on accurately suggesting the 
         start: event.start.dateTime,
         end: event.end.dateTime,
         subject: event.subject
-      }))
+      })),
+      timezone: timezone
     };
     
     const draftResponse = await ollamaService.generateText(systemPrompt, userPrompt, fallbackData);
