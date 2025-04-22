@@ -1,43 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { ConfidentialClientApplication } = require('@azure/msal-node');
-
-// MSAL configuration
-const msalConfig = {
-  auth: {
-    clientId: process.env.CLIENT_ID,
-    authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
-    clientSecret: process.env.CLIENT_SECRET
-  },
-  system: {
-    loggerOptions: {
-      loggerCallback(loglevel, message, containsPii) {
-        console.log(message);
-      },
-      piiLoggingEnabled: false,
-      logLevel: "Info"
-    }
-  }
-};
-
-// Create MSAL application object
-const msalClient = new ConfidentialClientApplication(msalConfig);
-
-// Microsoft Graph scopes needed for the app
-const scopes = [
-  'user.read',
-  'mail.read',
-  'mail.send',
-  'calendars.read',
-  'mail.readwrite'
-];
+const { msalClient, scopes } = require('../config/auth-config');
+const { Client } = require('@microsoft/microsoft-graph-client');
 
 // Login route
 router.get('/login', (req, res) => {
   // Create auth URL for Microsoft login
   const authCodeUrlParameters = {
     scopes: scopes,
-    redirectUri: process.env.REDIRECT_URI
+    redirectUri: process.env.REDIRECT_URI,
+    // Add prompt behavior to force new login
+    prompt: 'select_account'
   };
 
   msalClient.getAuthCodeUrl(authCodeUrlParameters)
@@ -64,15 +37,16 @@ router.get('/callback', (req, res) => {
       req.session.isAuthenticated = true;
       req.session.accessToken = response.accessToken;
       req.session.userName = response.account.name;
-      req.session.userEmail = response.account.username;
-      req.session.userId = response.uniqueId;
+      req.session.userEmail = response.account.username || response.account.idTokenClaims.preferred_username;
+      req.session.userId = response.uniqueId || response.account.homeAccountId;
+      req.session.tenantId = response.tenantId;
 
       // Redirect to home page
       res.redirect('/');
     })
     .catch((error) => {
-      console.log(error);
-      res.status(500).send('Error acquiring token');
+      console.log('Token acquisition error:', error);
+      res.status(500).send('Error acquiring token: ' + error.message);
     });
 });
 
@@ -99,7 +73,7 @@ const getGraphClient = (accessToken) => {
   };
   
   // Initialize Graph client
-  const client = require('@microsoft/microsoft-graph-client').Client.init({
+  const client = Client.init({
     authProvider: authProvider
   });
   
