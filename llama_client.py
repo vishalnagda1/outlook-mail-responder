@@ -1,4 +1,7 @@
+import os
 import requests
+
+OLLAMA_URL = os.getenv("OLLAMA_URL")
 
 
 def generate_draft(subject, body, calendar_text=""):
@@ -14,7 +17,7 @@ Use the following upcoming calendar info if needed:
 Draft a professional reply.
 """
     response = requests.post(
-        "http://localhost:11434/api/generate",
-        json={"model": "llama3", "prompt": prompt, "stream": False},
+        f"{OLLAMA_URL}/api/generate",
+        json={"model": "llama3.1:8b", "prompt": prompt, "stream": False},
     )
     return response.json()["response"]
