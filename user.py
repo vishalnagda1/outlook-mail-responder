@@ -1,7 +1,7 @@
 import builtins
 import os
 from datetime import datetime, timedelta
-
+import re
 import dotenv
 import msal
 import pytz
@@ -52,7 +52,7 @@ TENANT_ID = os.getenv("TENANT_ID")
 
 USER_EMAIL = "team@tech-now.io"  # The email account to access
 
-ACCESS_TOKEN = None
+ACCESS_TOKEN = None  # Global variable to store the access token
 
 
 def get_access_token():
@@ -83,7 +83,6 @@ def get_access_token():
         raise Exception(f"Authentication failed: {result.get('error_description')}")
 
     ACCESS_TOKEN = result["access_token"]
-    print("Access token: ", ACCESS_TOKEN, c=1)
     return ACCESS_TOKEN
 
 
@@ -101,8 +100,6 @@ def read_emails(max_count=10):
         f"https://graph.microsoft.com/v1.0/users/{USER_EMAIL}/messages?$filter=isRead eq false&$top={max_count}&$orderby=receivedDateTime desc",
         headers=headers,
     )
-
-    print("Response: ", response.json(), c=1)
 
     if response.status_code != 200:
         raise Exception(f"Failed to fetch emails: {response.text}")
@@ -123,8 +120,6 @@ def read_emails(max_count=10):
                 "body_preview": email.get("bodyPreview"),
             }
         )
-
-    print("Formatted Emails: ", formatted_emails, c=3)
 
     return formatted_emails
 
@@ -174,10 +169,9 @@ def check_calendar(days_ahead=7):
         end_local = end_utc.astimezone(TIMEZONE)
 
         # Format output
-        start_str = start_local.strftime("%Y-%m-%d %H:%M")
-        end_str = end_local.strftime("%Y-%m-%d %H:%M")
+        start_str = start_local.strftime("%Y-%m-%d %I:%M %p")
+        end_str = end_local.strftime("%Y-%m-%d %I:%M %p")
 
-        print(f"{e['subject']} | {start_str} - {end_str}")
         formatted_events.append(
             {
                 "subject": e["subject"],
@@ -287,33 +281,17 @@ def find_available_slots(days_ahead=7, duration_minutes=30):
     return available_slots
 
 
-def create_email_draft(to_recipients, subject, body_content):
+def create_email_draft(payload: dict):
     """Create an email draft for the user"""
 
     token = get_access_token()
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # Format recipients
-
-    recipients = []
-
-    for recipient in to_recipients:
-        recipients.append({"emailAddress": {"address": recipient}})
-
-    # Create draft email
-
-    email_data = {
-        "subject": subject,
-        "body": {"contentType": "HTML", "content": body_content},
-        "toRecipients": recipients,
-        "isDraft": True,
-    }
-
     response = requests.post(
         f"https://graph.microsoft.com/v1.0/users/{USER_EMAIL}/messages",
         headers=headers,
-        json=email_data,
+        json=payload,
     )
 
     if response.status_code not in [200, 201]:
@@ -322,18 +300,109 @@ def create_email_draft(to_recipients, subject, body_content):
     return response.json()
 
 
-def process_specific_email(email_id):
-    """Process a specific email, find availability, and create a response draft"""
+def generate_text(system_prompt, user_prompt):
+    try:
+        url = f"{os.environ.get('OLLAMA_API_URL')}/api/generate"
+        model = os.environ.get("OLLAMA_MODEL", "llama3.1:8b")
 
+        # Format the prompt
+        formatted_prompt = f"<s>\n{system_prompt}\n</s>\n\n"
+        formatted_prompt += user_prompt
+        formatted_prompt += (
+            "\n\nIf the mail required my availability then check my calendar availability "
+            "and suggest suitable time slots accordingly otherwise ignore it and carefully "
+            "draft a concise, professional email response. Do not include anything else apart "
+            "from the email response.\n\n"
+        )
+
+        payload = {
+            "model": model,
+            "prompt": formatted_prompt,
+            "stream": False,
+            "options": {
+                "temperature": 0.6,
+                "top_p": 0.9,
+                "top_k": 40,
+                "num_predict": 1024,
+            },
+        }
+
+        # Make the request with a 15-second timeout
+        response = requests.post(url, json=payload, timeout=15)
+        response.raise_for_status()
+
+        generated_text = response.json().get("response", "").strip()
+        return sanitize_response(generated_text)
+
+    except requests.RequestException as error:
+        print(f"Error calling Ollama API: {str(error)}", c=1)
+        if hasattr(error, "response") and error.response is not None:
+            print(f"Response data: {error.response.text}", c=3)
+            print(f"Response status: {error.response.status_code}", c=4)
+        raise RuntimeError("Failed to generate text with Ollama")
+
+
+def sanitize_response(text):
+    # Remove signature blocks
+    text = re.sub(r"^--+\s*\n.*$", "", text, flags=re.MULTILINE)
+
+    # Remove markdown-style code block formatting
+    text = re.sub(r"^```email\s*", "", text)
+    text = re.sub(r"```\s*$", "", text)
+
+    # Remove duplicated greeting lines
+    lines = text.split("\n")
+    seen_greeting = False
+    cleaned_lines = []
+
+    for line in lines:
+        is_greeting = re.match(
+            r"^(dear|hello|hi|greetings|good (morning|afternoon|evening))",
+            line,
+            re.IGNORECASE,
+        )
+        if is_greeting:
+            if seen_greeting:
+                continue
+            seen_greeting = True
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines)
+
+
+def mark_user_email_as_read(email_id: str) -> bool:
     token = get_access_token()
 
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
-    # Get the specific email
+    response = requests.patch(
+        f"https://graph.microsoft.com/v1.0/users/{USER_EMAIL}/messages/{email_id}",
+        headers=headers,
+        json={"isRead": True},
+    )
+
+    if response.status_code not in [200, 201]:
+        raise Exception(f"Failed to mark as read: {response.text}", c=4)
+
+    return response.json()
+
+
+def generate_user_draft_response(
+    email_id: str,
+    calendar_events: list,
+):
+    token = get_access_token()
+
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+
+    params = {
+        "$select": "id,subject,body,receivedDateTime,from,toRecipients",
+    }
 
     response = requests.get(
         f"https://graph.microsoft.com/v1.0/users/{USER_EMAIL}/messages/{email_id}",
         headers=headers,
+        params=params,
     )
 
     if response.status_code != 200:
@@ -341,86 +410,77 @@ def process_specific_email(email_id):
 
     email = response.json()
 
-    focus_email = {
-        "id": email.get("id"),
-        "subject": email.get("subject"),
-        "from": email.get("from", {}).get("emailAddress", {}).get("address"),
-        "from_name": email.get("from", {}).get("emailAddress", {}).get("name"),
-        "body": email.get("body", {}).get("content"),
-    }
+    sender_name = email["from"]["emailAddress"]["name"]
+    body_content = re.sub(r"<[^>]+>", " ", email["body"]["content"])
 
-    # Find available slots
+    if calendar_events:
+        availability = "##### My upcoming meetings:" + "".join(
+            [
+                f"\n- {e['subject']} on {e['start']} from {e['start']} to {e['end']}"
+                for e in calendar_events
+            ]
+        )
+    else:
+        availability = "I have no scheduled meetings in the next few days."
 
-    available_slots = find_available_slots(days_ahead=5)
-
-    # Format available times for email
-
-    available_times_html = "<ul>"
-
-    for slot in available_slots[:3]:  # Show top 3 slots
-        available_times_html += f"<li><strong>{slot['day']} ({slot['date']})</strong>: {slot['start_time']} - {slot['end_time']}</li>"
-
-    available_times_html += "</ul>"
-
-    # Create email body
-
-    body = f"""
-<p>Hello {focus_email["from_name"]},</p>
-<p>Thank you for your email regarding "{focus_email["subject"]}".</p>
-<p>I've checked my calendar and have the following availability for our meeting:</p>
-
-    {available_times_html}
-<p>Please let me know which time works best for you, and I'll send a calendar invitation.</p>
-<p>Best regards,<br>{USER_EMAIL.split("@")[0]}</p>
-
-    """
-
-    # Create the draft
-
-    draft = create_email_draft(
-        [focus_email["from"]],  # Reply to sender
-        f"RE: {focus_email['subject']}",
-        body,
+    system_prompt = (
+        "You are an email assistant that drafts professional responses. "
+        "Consider the calendar availability when mentioned. Be concise but polite."
+    )
+    user_prompt = (
+        f"Original email from {sender_name}:\nSubject: {email['subject']}\n\n{body_content}\n\n"
+        f"{availability}\n\nDraft a professional response to this email."
     )
 
-    return {
-        "email": focus_email,
-        "available_slots": available_slots[:3],
-        "draft_id": draft.get("id"),
+    draft = generate_text(system_prompt, user_prompt)
+
+    payload = {
+        "subject": f"RE: {email['subject']}",
+        "importance": email.get("importance", "normal"),
+        "body": {"contentType": "HTML", "content": draft.replace("\n", "<br>")},
+        "toRecipients": [email["from"]],
+        "isDraft": True,
     }
+
+    return payload
 
 
 def main():
-    # 1. Read recent emails
-    print("Reading recent emails...")
-    emails = read_emails(1)
-    print(f"Found {len(emails)} recent emails")
+    try:
+        # 1. Read recent emails
+        print("Reading recent emails...")
+        emails = read_emails(1)
+        print(f"Found {len(emails)} recent emails")
 
-    # For demo, use the first email
-    if not emails:
-        return None
+        # For demo, use the first email
+        if not emails:
+            return None
 
-    events = check_calendar(15)
+        events = check_calendar(15)
 
-    for email in emails:
-        print(
-            f"  - {email['subject']} (from: {email['from']}, received at: {email['received_at']})"
-        )
+        for email in emails:
+            print(
+                f"  - {email['subject']} (from: {email['from']}, received at: {email['received_at']}",
+                c=3,
+            )
 
-        # print(f"\nProcessing email: {email['subject']}")
+            # 2. Process specific email - check calendar and create draft
 
-        # # 2. Process specific email - check calendar and create draft
+            # result = process_specific_email(email)
+            payload = generate_user_draft_response(email["id"], events)
 
-        # result = process_specific_email(email)
+            result = create_email_draft(payload)
 
-        # print("\nAvailable time slots:")
-
-        # for i, slot in enumerate(result["available_slots"], 1):
-        #     print(
-        #         f"  {i}. {slot['day']} ({slot['date']}): {slot['start_time']} - {slot['end_time']}"
-        #     )
-
-        # print(f"\nEmail draft created with ID: {result['draft_id']}")
+            # 3. Mark email as read
+            result = mark_user_email_as_read(email["id"])
+            print(
+                f"Email with subject '{result['subject']}' has been marked as read", c=2
+            )
+    except Exception as e:
+        print(f"An error occurred: {str(e)}", c=1)
+        if hasattr(e, "response") and e.response is not None:
+            print(f"Response data: {e.response.text}", c=3)
+            print(f"Response status: {e.response.status_code}", c=4)
 
 
 if __name__ == "__main__":
