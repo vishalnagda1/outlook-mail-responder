@@ -4,7 +4,7 @@ const auth = require('./auth');
 const moment = require('moment-timezone');
 const ollamaService = require('../services/ollama-service');
 
-const userTimeZone = 'Asia/Calcutta';
+const userTimeZone = process.env.DEFAULT_TIMEZONE || 'Asia/Calcutta';
 
 // Route to display unread emails
 router.get('/', auth.isAuthenticated, async (req, res) => {
