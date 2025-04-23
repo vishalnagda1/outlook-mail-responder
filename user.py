@@ -130,7 +130,7 @@ def check_calendar(days_ahead=7):
     token = get_access_token()
 
     now = datetime.now()
-    end = now + timedelta(days=7)
+    end = now + timedelta(days=days_ahead)
 
     # Headers
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -312,7 +312,7 @@ def generate_text(system_prompt, user_prompt):
             "\n\nIf the mail required my availability then check my calendar availability "
             "and suggest suitable time slots accordingly otherwise ignore it and carefully "
             "draft a concise, professional email response. Do not include anything else apart "
-            "from the email response.\n\n"
+            "from the email body, no subject required just email body with proper greetings and signature. Don't forget to add name as 'TechNow' in the signature.\n\n"
         )
 
         payload = {
@@ -449,7 +449,7 @@ def main():
     try:
         # 1. Read recent emails
         print("Reading recent emails...")
-        emails = read_emails(1)
+        emails = read_emails(10)
         print(f"Found {len(emails)} recent emails")
 
         # For demo, use the first email
