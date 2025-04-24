@@ -11,7 +11,6 @@ router.get('/login', (req, res) => {
     redirectUri: process.env.REDIRECT_URI,
     // Add prompt behavior to force new login
     // prompt: 'select_account'
-    // prompt: 'select_account'
   };
 
   msalClient.getAuthCodeUrl(authCodeUrlParameters)
@@ -37,10 +36,14 @@ router.get('/callback', (req, res) => {
       // Save token info in session
       req.session.isAuthenticated = true;
       req.session.accessToken = response.accessToken;
+      req.session.refreshToken = response.refreshToken;
+      req.session.tokenExpires = new Date(Date.now() + response.expiresIn * 1000);
       req.session.userName = response.account.name;
       req.session.userEmail = response.account.username || response.account.idTokenClaims.preferred_username;
       req.session.userId = response.uniqueId || response.account.homeAccountId;
       req.session.tenantId = response.tenantId;
+      // Store account for token refresh
+      req.session.accountId = response.account.homeAccountId;
 
       // Redirect to home page
       res.redirect('/');
@@ -58,11 +61,55 @@ router.get('/logout', (req, res) => {
   });
 });
 
-// Helper middleware for checking if user is authenticated
-const isAuthenticated = (req, res, next) => {
+// Helper middleware for checking if user is authenticated and refreshing token if needed
+const isAuthenticated = async (req, res, next) => {
   if (!req.session.isAuthenticated) {
     return res.redirect('/auth/login');
   }
+  
+  // Check if token is expired or will expire soon (within 5 minutes)
+  const now = new Date();
+  const tokenExpiry = new Date(req.session.tokenExpires);
+  const fiveMinutesFromNow = new Date(now.getTime() + 5 * 60 * 1000);
+  
+  if (tokenExpiry < fiveMinutesFromNow) {
+    try {
+      // Try to silently refresh the token
+      console.log('Token expiring soon, attempting refresh');
+      
+      // Get account from cache if possible
+      let account;
+      
+      try {
+        const accounts = await msalClient.getTokenCache().getAllAccounts();
+        account = accounts.find(acc => acc.homeAccountId === req.session.accountId);
+      } catch (error) {
+        console.log('Error getting account from cache:', error);
+      }
+      
+      if (!account) {
+        console.log('Account not found in cache, redirecting to login');
+        return res.redirect('/auth/login');
+      }
+      
+      const silentRequest = {
+        account: account,
+        scopes: scopes,
+      };
+      
+      const response = await msalClient.acquireTokenSilent(silentRequest);
+      
+      // Update session with new token info
+      req.session.accessToken = response.accessToken;
+      req.session.tokenExpires = new Date(Date.now() + response.expiresIn * 1000);
+      console.log('Token refreshed successfully');
+    } catch (error) {
+      console.log('Error refreshing token:', error);
+      // If silent refresh fails, redirect to login
+      return res.redirect('/auth/login');
+    }
+  }
+  
   next();
 };
 
