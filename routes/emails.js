@@ -91,7 +91,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     // Get original email
     const email = await client
       .api(`/me/messages/${emailId}`)
-      .select('id,subject,body,receivedDateTime,from,toRecipients')
+      .select('id,subject,body,receivedDateTime,from,toRecipients,ccRecipients,importance')
       .get();
     
     // Get calendar availability
@@ -123,7 +123,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     // Get AI to draft response using Ollama
     const systemPrompt = `You are an email assistant that drafts professional responses. Consider the calendar availability when mentioned. Be concise but polite.`;
     
-    const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email.`;// If the email mentions scheduling a meeting, suggest available times based on my calendar.`;
+    const userPrompt = `Original email from ${senderName}:\nSubject: ${email.subject}\n\n${emailContent}\n\n${availabilityText}\n\nDraft a professional response to this email.`;
     
     // Prepare fallback data
     const fallbackData = {
@@ -146,9 +146,26 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
         contentType: "HTML",
         content: draftResponse.replace(/\n/g, '<br>')
       },
-      toRecipients: [email.from]
+      toRecipients: [
+        {
+          emailAddress: {
+            address: email.from.emailAddress.address,
+            name: email.from.emailAddress.name
+          }
+        }
+      ]
     };
     
+    // Add CC recipients if they exist in the original email
+    if (email.ccRecipients && email.ccRecipients.length > 0) {
+      draft.ccRecipients = email.ccRecipients.map(recipient => ({
+        emailAddress: {
+          address: recipient.emailAddress.address,
+          name: recipient.emailAddress.name || recipient.emailAddress.address
+        }
+      }));
+    }
+
     // Save the draft
     await client
       .api('/me/messages')
@@ -161,7 +178,7 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating draft response:', error);
-    res.status(500).json({ success: false, error: 'Error creating draft response' });
+    res.status(500).json({ success: false, error: 'Error creating draft response: ' + error.message });
   }
 });
 
