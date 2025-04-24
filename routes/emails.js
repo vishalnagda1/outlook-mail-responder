@@ -138,38 +138,21 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     
     const draftResponse = await ollamaService.generateText(systemPrompt, userPrompt, fallbackData);
     
-    // Create a draft email in Outlook
-    const draft = {
-      subject: `RE: ${email.subject}`,
-      importance: email.importance,
-      body: {
-        contentType: "HTML",
-        content: draftResponse.replace(/\n/g, '<br>')
-      },
-      toRecipients: [
-        {
-          emailAddress: {
-            address: email.from.emailAddress.address,
-            name: email.from.emailAddress.name
-          }
-        }
-      ]
-    };
-    
-    // Add CC recipients if they exist in the original email
-    if (email.ccRecipients && email.ccRecipients.length > 0) {
-      draft.ccRecipients = email.ccRecipients.map(recipient => ({
-        emailAddress: {
-          address: recipient.emailAddress.address,
-          name: recipient.emailAddress.name || recipient.emailAddress.address
-        }
-      }));
-    }
-
-    // Save the draft
+    // Create a reply draft to maintain email thread
+    // First, get a draft reply message that maintains threading
+    const replyDraft = await client
+      .api(`/me/messages/${emailId}/createReply`)
+      .post({});
+      
+    // Then update the content of the draft with our generated response
     await client
-      .api('/me/messages')
-      .post(draft);
+      .api(`/me/messages/${replyDraft.id}`)
+      .update({
+        body: {
+          contentType: "HTML",
+          content: draftResponse.replace(/\n/g, '<br>')
+        }
+      });
     
     res.json({ 
       success: true, 
@@ -178,7 +161,11 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating draft response:', error);
-    res.status(500).json({ success: false, error: 'Error creating draft response: ' + error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: 'Error creating draft response: ' + error.message,
+      stack: error.stack
+    });
   }
 });
 
