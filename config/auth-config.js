@@ -5,8 +5,8 @@ const msalConfig = {
   auth: {
     clientId: process.env.CLIENT_ID,
     // Use common authority instead of tenant-specific
-    // authority: 'https://login.microsoftonline.com/common',
-    authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
+    authority: 'https://login.microsoftonline.com/common',
+    // authority: `https://login.microsoftonline.com/${process.env.TENANT_ID}`,
     clientSecret: process.env.CLIENT_SECRET
   },
   system: {
