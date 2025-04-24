@@ -50,7 +50,7 @@ CLIENT_ID = os.getenv("CLIENT_ID")
 CLIENT_SECRET = os.getenv("CLIENT_SECRET")
 TENANT_ID = os.getenv("TENANT_ID")
 
-USER_EMAIL = "team@tech-now.io"  # The email account to access
+USER_EMAIL = os.getenv("USER_EMAIL")  # The email account to access
 
 ACCESS_TOKEN = None  # Global variable to store the access token
 
