@@ -138,26 +138,41 @@ router.post('/:id/draft', auth.isAuthenticated, async (req, res) => {
     
     const draftResponse = await ollamaService.generateText(systemPrompt, userPrompt, fallbackData);
     
+    // Determine if we should use Reply or ReplyAll based on CC recipients
+    let replyEndpoint = 'createReply';
+    if (email.ccRecipients && email.ccRecipients.length > 0) {
+      replyEndpoint = 'createReplyAll'; // Use ReplyAll to preserve CC recipients
+    }
+    
     // Create a reply draft to maintain email thread
-    // First, get a draft reply message that maintains threading
     const replyDraft = await client
-      .api(`/me/messages/${emailId}/createReply`)
+      .api(`/me/messages/${emailId}/${replyEndpoint}`)
       .post({});
+    
+    // After creating the reply draft, get its details to verify CC recipients
+    const createdDraft = await client
+      .api(`/me/messages/${replyDraft.id}`)
+      .select('id,subject,toRecipients,ccRecipients,importance')
+      .get();
       
-    // Then update the content of the draft with our generated response
+    console.log("Created draft details:", JSON.stringify(createdDraft, null, 2));
+    
+    // Update the content of the draft with our generated response
     await client
       .api(`/me/messages/${replyDraft.id}`)
       .update({
         body: {
           contentType: "HTML",
           content: draftResponse.replace(/\n/g, '<br>')
-        }
+        },
+        importance: email.importance // Ensure importance is maintained
       });
     
     res.json({ 
       success: true, 
       draft: draftResponse,
-      message: 'Draft response created in Outlook'
+      message: 'Draft response created in Outlook',
+      draftId: replyDraft.id
     });
   } catch (error) {
     console.error('Error creating draft response:', error);
